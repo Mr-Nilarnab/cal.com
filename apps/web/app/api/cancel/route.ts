@@ -5,7 +5,11 @@ import type { NextRequest } from "next/server";
 
 import { getServerSession } from "@calcom/features/auth/lib/getServerSession";
 import handleCancelBooking from "@calcom/features/bookings/lib/handleCancelBooking";
+import { checkRateLimitAndThrowError } from "@calcom/lib/checkRateLimitAndThrowError";
+import getIP from "@calcom/lib/getIP";
+import { piiHasher } from "@calcom/lib/server/PiiHasher";
 import { bookingCancelWithCsrfSchema } from "@calcom/prisma/zod-utils";
+import { validateCsrfToken } from "@calcom/web/lib/validateCsrfToken";
 
 import { buildLegacyRequest } from "@lib/buildLegacyCtx";
 
@@ -17,18 +21,36 @@ async function handler(req: NextRequest) {
     return NextResponse.json({ success: false, message: "Invalid JSON" }, { status: 400 });
   }
   const bookingData = bookingCancelWithCsrfSchema.parse(appDirRequestBody);
-  const cookieStore = await cookies();
-  const cookieToken = cookieStore.get("calcom.csrf_token")?.value;
 
-  if (!cookieToken || cookieToken !== bookingData.csrfToken) {
-    return NextResponse.json({ success: false, message: "Invalid CSRF token" }, { status: 403 });
+  // Integer IDs are sequential/guessable — only accept high-entropy UIDs on this route
+  if (!bookingData.uid) {
+    return NextResponse.json(
+      { success: false, message: "uid is required for booking cancellation" },
+      { status: 400 }
+    );
   }
-  cookieStore.delete("calcom.csrf_token");
+
+  const csrfError = await validateCsrfToken(bookingData.csrfToken);
+  if (csrfError) {
+    return csrfError;
+  }
 
   const session = await getServerSession({ req: buildLegacyRequest(await headers(), await cookies()) });
 
+  // Rate limit: 10 booking cancellations per 60 seconds per user (or IP if not authenticated)
+  const identifier = session?.user?.id
+    ? `api:cancel-user:${session.user.id}`
+    : `api:cancel-ip:${piiHasher.hash(getIP(req))}`;
+  await checkRateLimitAndThrowError({
+    rateLimitingType: "core",
+    identifier,
+  });
+
+  // Strip integer id to ensure lookup is always by uid
+  const { id: _id, ...safeBookingData } = bookingData;
+
   const result = await handleCancelBooking({
-    bookingData,
+    bookingData: safeBookingData,
     userId: session?.user?.id || -1,
   });
 

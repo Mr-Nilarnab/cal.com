@@ -1,10 +1,8 @@
-import { PlatformPlan } from "@/modules/billing/types";
+import { Prisma } from "@calcom/prisma/client";
+import { Injectable } from "@nestjs/common";
 import { PrismaReadService } from "@/modules/prisma/prisma-read.service";
 import { PrismaWriteService } from "@/modules/prisma/prisma-write.service";
 import { StripeService } from "@/modules/stripe/stripe.service";
-import { Injectable } from "@nestjs/common";
-
-import { Prisma } from "@calcom/prisma/client";
 
 @Injectable()
 export class OrganizationsRepository {
@@ -14,11 +12,10 @@ export class OrganizationsRepository {
     private readonly stripeService: StripeService
   ) {}
 
-  async findById(organizationId: number) {
+  async findById(args: { id: number }) {
     return this.dbRead.prisma.team.findUnique({
       where: {
-        id: organizationId,
-        isOrganization: true,
+        id: args.id,
       },
     });
   }
@@ -34,40 +31,6 @@ export class OrganizationsRepository {
     });
   }
 
-  async findByIdIncludeBilling(orgId: number) {
-    return this.dbRead.prisma.team.findUnique({
-      where: {
-        id: orgId,
-      },
-      include: {
-        platformBilling: true,
-      },
-    });
-  }
-
-  async createNewBillingRelation(orgId: number, plan?: PlatformPlan) {
-    const { id } = await this.stripeService.getStripe().customers.create({
-      metadata: {
-        createdBy: "oauth_client_no_csid", // mark in case this is needed in the future.
-      },
-    });
-
-    await this.dbWrite.prisma.team.update({
-      where: {
-        id: orgId,
-      },
-      data: {
-        platformBilling: {
-          create: {
-            customerId: id,
-            plan: plan ? plan.toString() : "none",
-          },
-        },
-      },
-    });
-
-    return id;
-  }
 
   async findTeamIdAndSlugFromClientId(clientId: string) {
     return this.dbRead.prisma.team.findFirstOrThrow({
@@ -175,13 +138,4 @@ export class OrganizationsRepository {
     });
   }
 
-  async findTeamByPlatformBillingId(billingId: number) {
-    return this.dbRead.prisma.team.findFirst({
-      where: {
-        platformBilling: {
-          id: billingId,
-        },
-      },
-    });
-  }
 }

@@ -4,7 +4,6 @@ import { getLocationGroupedOptions } from "@calcom/app-store/server";
 import { getEventTypeAppData } from "@calcom/app-store/utils";
 import { eventTypeMetaDataSchemaWithTypedApps } from "@calcom/app-store/zod-utils";
 import { getBookingFieldsWithSystemFields } from "@calcom/features/bookings/lib/getBookingFields";
-import { getBookerBaseUrl } from "@calcom/features/ee/organizations/lib/getBookerUrlServer";
 import { EventTypeRepository } from "@calcom/features/eventtypes/repositories/eventTypeRepository";
 import { UserRepository } from "@calcom/features/users/repositories/UserRepository";
 import { WEBSITE_URL } from "@calcom/lib/constants";
@@ -13,13 +12,16 @@ import { parseBookingLimit } from "@calcom/lib/intervalLimits/isBookingLimits";
 import { parseDurationLimit } from "@calcom/lib/intervalLimits/isDurationLimits";
 import { parseEventTypeColor } from "@calcom/lib/isEventTypeColor";
 import { parseRecurringEvent } from "@calcom/lib/isRecurringEvent";
-import { getTranslation } from "@calcom/lib/server/i18n";
+import { getTranslation } from "@calcom/i18n/server";
 import type { PrismaClient } from "@calcom/prisma";
 import type { Prisma } from "@calcom/prisma/client";
-import { SchedulingType, MembershipRole } from "@calcom/prisma/enums";
+import { MembershipRole, SchedulingType } from "@calcom/prisma/enums";
 import { customInputSchema } from "@calcom/prisma/zod-utils";
-
 import { TRPCError } from "@trpc/server";
+
+const getOrganizationRepository = () => ({ findById: async (..._args: unknown[]) => null });
+const getBookerBaseUrl = async (_orgSlug?: string | number | null): Promise<string> =>
+  process.env.NEXT_PUBLIC_WEBAPP_URL || "https://app.cal.com";
 
 interface getEventTypeByIdProps {
   eventTypeId: number;
@@ -28,6 +30,7 @@ interface getEventTypeByIdProps {
   isTrpcCall?: boolean;
   isUserOrganizationAdmin: boolean;
   currentOrganizationId: number | null;
+  userLocale?: string | null;
 }
 
 export type EventType = Awaited<ReturnType<typeof getEventTypeById>>;
@@ -39,6 +42,7 @@ export const getEventTypeById = async ({
   prisma,
   isTrpcCall = false,
   isUserOrganizationAdmin,
+  userLocale,
 }: getEventTypeByIdProps) => {
   const userSelect = {
     name: true,
@@ -106,7 +110,7 @@ export const getEventTypeById = async ({
 
   newMetadata.apps = {
     ...apps,
-    giphy: getEventTypeAppData(eventTypeWithParsedMetadata, "giphy", true),
+    giphy: getEventTypeAppData(eventTypeWithParsedMetadata, "giphy", true) ?? undefined,
   };
 
   const parsedMetaData = newMetadata;
@@ -135,8 +139,8 @@ export const getEventTypeById = async ({
     bookerUrl: restEventType.team
       ? await getBookerBaseUrl(restEventType.team.parentId)
       : restEventType.owner
-      ? await getBookerBaseUrl(currentOrganizationId)
-      : WEBSITE_URL,
+        ? await getBookerBaseUrl(currentOrganizationId)
+        : WEBSITE_URL,
     children: childrenWithUserProfile.flatMap((ch) =>
       ch.owner !== null
         ? {
@@ -186,7 +190,7 @@ export const getEventTypeById = async ({
 
   const currentUser = eventType.users.find((u) => u.id === userId);
 
-  const t = await getTranslation(currentUser?.locale ?? "en", "common");
+  const t = await getTranslation(userLocale ?? currentUser?.locale ?? "en", "common");
 
   if (!currentUser?.id && !eventType.teamId) {
     throw new TRPCError({
@@ -273,11 +277,20 @@ export async function getRawEventType({
 }: Omit<getEventTypeByIdProps, "isTrpcCall">) {
   const eventTypeRepo = new EventTypeRepository(prisma);
 
+  // Platform org admins can access any event type within their organization
   if (isUserOrganizationAdmin && currentOrganizationId) {
-    return await eventTypeRepo.findByIdForOrgAdmin({
-      id: eventTypeId,
-      organizationId: currentOrganizationId,
+    const org = await prisma.team.findUnique({
+      where: { id: currentOrganizationId },
+      select: { isPlatform: true },
     });
+
+    if (org?.isPlatform) {
+      const orgResult = await eventTypeRepo.findByIdForOrgAdmin({
+        id: eventTypeId,
+        organizationId: currentOrganizationId,
+      });
+      if (orgResult) return orgResult;
+    }
   }
 
   return await eventTypeRepo.findById({

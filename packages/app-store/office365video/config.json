@@ -4,7 +4,7 @@
   "type": "office365_video",
   "variant": "conferencing",
   "logo": "icon.svg",
-  "publisher": "Cal.com",
+  "publisher": "Cal.diy",
   "url": "https://www.microsoft.com/en-ca/microsoft-teams/group-chat-software",
   "verified": true,
   "rating": 4.3,
@@ -22,7 +22,6 @@
     }
   },
   "dirName": "office365video",
-  "dependencies": ["office365-calendar"],
   "concurrentMeetings": true,
   "isOAuth": true
 }

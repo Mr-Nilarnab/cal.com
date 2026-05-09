@@ -1,5 +1,5 @@
 import dayjs from "@calcom/dayjs";
-import { getTranslation } from "@calcom/lib/server/i18n";
+import { getTranslation } from "@calcom/i18n/server";
 import prisma from "@calcom/prisma";
 import type { User } from "@calcom/prisma/client";
 
@@ -51,7 +51,7 @@ const passwordResetRequest = async (user: Pick<User, "email" | "name" | "locale"
   const t = await getTranslation(user.locale ?? "en", "common");
   await guardAgainstTooManyPasswordResets(email);
   const resetLink = await createPasswordReset(email);
-  const { sendPasswordResetEmail } = await import("@calcom/emails");
+  const { sendPasswordResetEmail } = await import("@calcom/emails/auth-email-service");
 
   // send email in user language
   await sendPasswordResetEmail({

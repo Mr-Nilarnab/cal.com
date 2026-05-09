@@ -4,8 +4,6 @@ import dayjs from "@calcom/dayjs";
 import { isBookingDryRun } from "@calcom/features/bookings/Booker/utils/isBookingDryRun";
 import { getRoutedTeamMemberIdsFromSearchParams } from "@calcom/lib/bookings/getRoutedTeamMemberIdsFromSearchParams";
 import { parseRecurringDates } from "@calcom/lib/parse-dates";
-import type { RoutingFormSearchParams } from "@calcom/platform-types";
-
 import type { BookerEvent, BookingCreateBody, RecurringBookingCreateBody } from "../../../types";
 import type { Tracking } from "../../handleNewBooking/types";
 
@@ -29,9 +27,9 @@ export type BookingOptions = {
   crmAppSlug?: string | null;
   crmRecordId?: string | null;
   orgSlug?: string;
-  routingFormSearchParams?: RoutingFormSearchParams;
   isDryRunProp?: boolean;
   verificationCode?: string;
+  rrHostSubsetIds?: number[];
 };
 
 export const mapBookingToMutationInput = ({
@@ -53,19 +51,14 @@ export const mapBookingToMutationInput = ({
   crmAppSlug,
   crmRecordId,
   orgSlug,
-  routingFormSearchParams,
   isDryRunProp,
   verificationCode,
+  rrHostSubsetIds,
 }: BookingOptions): BookingCreateBody => {
-  const searchParams = new URLSearchParams(routingFormSearchParams ?? window.location.search);
+  const searchParams = new URLSearchParams(window.location.search);
   const routedTeamMemberIds = getRoutedTeamMemberIdsFromSearchParams(searchParams);
-  const routingFormResponseIdParam = searchParams.get("cal.routingFormResponseId");
-  const routingFormResponseId = routingFormResponseIdParam ? Number(routingFormResponseIdParam) : undefined;
   const skipContactOwner = searchParams.get("cal.skipContactOwner") === "true";
-  const reroutingFormResponses = searchParams.get("cal.reroutingFormResponses");
   const _isDryRun = isDryRunProp !== undefined ? isDryRunProp : isBookingDryRun(searchParams);
-  const _cacheParam = searchParams?.get("cal.cache");
-  const _shouldServeCache = _cacheParam ? _cacheParam === "true" : undefined;
   const dub_id = searchParams?.get("dub_id");
 
   return {
@@ -93,12 +86,9 @@ export const mapBookingToMutationInput = ({
     crmRecordId,
     orgSlug,
     routedTeamMemberIds,
-    routingFormResponseId,
+    rrHostSubsetIds,
     skipContactOwner,
-    // In case of rerouting, the form responses are actually the responses that we need to update.
-    reroutingFormResponses: reroutingFormResponses ? JSON.parse(reroutingFormResponses) : undefined,
     _isDryRun,
-    _shouldServeCache,
     dub_id,
     verificationCode,
   };
